@@ -20,11 +20,11 @@ Applicazione web Node.js per la gestione del bilancio familiare con entrate e us
 - elenco movimenti del mese
 - riepilogo aggregato delle spese per categoria
 - eliminazione di un movimento
-- database SQLite inizializzato automaticamente con dati di esempio
+- archivio JSON inizializzato automaticamente con dati di esempio
 
 ## Requisiti
 
-- Node.js 20+ consigliato
+- Node.js 16+ (consigliato Node.js 20+)
 - npm
 
 ## Installazione
@@ -43,16 +43,17 @@ http://localhost:3000
 
 ## Note tecniche
 
-- Il database SQLite viene salvato in `data/budget.db`.
-- All'avvio, se il database è vuoto, vengono inseriti automaticamente alcuni movimenti di esempio.
-- Lo script `npm run init-db` crea la tabella e carica un seed iniziale se necessario.
+- I dati vengono salvati in `data/transactions.json`.
+- All'avvio, se l'archivio è vuoto, vengono inseriti automaticamente alcuni movimenti di esempio.
+- Lo script `npm run init-db` crea il file JSON e carica un seed iniziale se necessario.
+- Non sono richieste dipendenze native o database esterni.
 
 ## Struttura del progetto
 
 - `src/server.js`: server Express e rendering HTML
-- `src/db.js`: inizializzazione connessione SQLite
+- `src/store.js`: persistenza JSON locale
 - `src/categories.js`: categorie e sottocategorie predefinite
-- `scripts/initDb.js`: bootstrap del database
+- `scripts/initDb.js`: bootstrap dell'archivio dati
 - `public/styles.css`: stile dell'interfaccia
 
 ## Sviluppi futuri possibili

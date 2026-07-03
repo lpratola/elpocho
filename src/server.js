@@ -1,49 +1,57 @@
 const path = require('path');
 const express = require('express');
-const { getDb } = require('./db');
 const categories = require('./categories');
+const { ensureStore, seedTransactions, listTransactions, addTransaction, deleteTransaction } = require('./store');
 
 const app = express();
 const port = process.env.PORT || 3000;
-const db = getDb();
 
-function initializeDatabase() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL,
-      description TEXT NOT NULL,
-      amount REAL NOT NULL CHECK(amount > 0),
-      type TEXT NOT NULL CHECK(type IN ('entrata', 'uscita')),
-      category TEXT NOT NULL,
-      subcategory TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+const seedRows = [
+  {
+    date: '2026-07-01',
+    description: 'Stipendio familiare',
+    amount: 3200,
+    type: 'entrata',
+    category: 'Stipendio',
+    subcategory: 'Stipendio principale',
+  },
+  {
+    date: '2026-07-02',
+    description: 'Bolletta gas',
+    amount: 75,
+    type: 'uscita',
+    category: 'Utenze',
+    subcategory: 'Gas',
+  },
+  {
+    date: '2026-07-04',
+    description: 'Carburante auto',
+    amount: 90,
+    type: 'uscita',
+    category: 'Auto',
+    subcategory: 'Carburante',
+  },
+  {
+    date: '2026-07-07',
+    description: 'Gita nel weekend',
+    amount: 140,
+    type: 'uscita',
+    category: 'Viaggi',
+    subcategory: 'Attività',
+  },
+  {
+    date: '2026-07-09',
+    description: 'Bonus straordinario',
+    amount: 250,
+    type: 'entrata',
+    category: 'Entrate extra',
+    subcategory: 'Bonus',
+  },
+];
 
-  const count = db.prepare('SELECT COUNT(*) as count FROM transactions').get();
-  if (count.count === 0) {
-    const seedRows = [
-      ['2026-07-01', 'Stipendio familiare', 3200, 'entrata', 'Stipendio', 'Stipendio principale'],
-      ['2026-07-02', 'Bolletta gas', 75, 'uscita', 'Utenze', 'Gas'],
-      ['2026-07-04', 'Carburante auto', 90, 'uscita', 'Auto', 'Carburante'],
-      ['2026-07-07', 'Gita nel weekend', 140, 'uscita', 'Viaggi', 'Attività'],
-      ['2026-07-09', 'Bonus straordinario', 250, 'entrata', 'Entrate extra', 'Bonus'],
-    ];
-
-    const insert = db.prepare(`
-      INSERT INTO transactions (date, description, amount, type, category, subcategory)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    const seed = db.transaction((rows) => {
-      for (const row of rows) {
-        insert.run(...row);
-      }
-    });
-
-    seed(seedRows);
-  }
+function initializeStore() {
+  ensureStore();
+  seedTransactions(seedRows);
 }
 
 function escapeHtml(value) {
@@ -84,54 +92,45 @@ function normalizeMonth(month) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function listCategories(type) {
-  return (categories[type] || [])
-    .map((category) => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`)
-    .join('');
-}
-
-function subcategoriesMap() {
-  const map = {};
-  for (const type of Object.keys(categories)) {
-    for (const category of categories[type]) {
-      map[category.name] = category.subcategories;
-    }
-  }
-  return map;
+function getTransactions(month) {
+  return listTransactions()
+    .filter((transaction) => transaction.date.startsWith(month))
+    .sort((a, b) => {
+      if (a.date === b.date) {
+        return b.id - a.id;
+      }
+      return a.date < b.date ? 1 : -1;
+    });
 }
 
 function getSummary(month) {
-  const totals = db.prepare(`
-    SELECT
-      SUM(CASE WHEN type = 'entrata' THEN amount ELSE 0 END) AS totalIncome,
-      SUM(CASE WHEN type = 'uscita' THEN amount ELSE 0 END) AS totalExpense
-    FROM transactions
-    WHERE substr(date, 1, 7) = ?
-  `).get(month);
+  const transactions = getTransactions(month);
+  const totalIncome = transactions
+    .filter((transaction) => transaction.type === 'entrata')
+    .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
 
-  const byCategory = db.prepare(`
-    SELECT category, SUM(amount) AS total
-    FROM transactions
-    WHERE type = 'uscita' AND substr(date, 1, 7) = ?
-    GROUP BY category
-    ORDER BY total DESC, category ASC
-  `).all(month);
+  const totalExpense = transactions
+    .filter((transaction) => transaction.type === 'uscita')
+    .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+
+  const totalsByCategory = new Map();
+  for (const transaction of transactions.filter((item) => item.type === 'uscita')) {
+    totalsByCategory.set(
+      transaction.category,
+      (totalsByCategory.get(transaction.category) || 0) + Number(transaction.amount)
+    );
+  }
+
+  const byCategory = Array.from(totalsByCategory.entries())
+    .map(([category, total]) => ({ category, total }))
+    .sort((a, b) => b.total - a.total || a.category.localeCompare(b.category));
 
   return {
-    totalIncome: totals.totalIncome || 0,
-    totalExpense: totals.totalExpense || 0,
-    balance: (totals.totalIncome || 0) - (totals.totalExpense || 0),
+    totalIncome,
+    totalExpense,
+    balance: totalIncome - totalExpense,
     byCategory,
   };
-}
-
-function getTransactions(month) {
-  return db.prepare(`
-    SELECT id, date, description, amount, type, category, subcategory
-    FROM transactions
-    WHERE substr(date, 1, 7) = ?
-    ORDER BY date DESC, id DESC
-  `).all(month);
 }
 
 function renderPage({ month, error = '', form = {} }) {
@@ -327,7 +326,7 @@ function renderPage({ month, error = '', form = {} }) {
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-initializeDatabase();
+initializeStore();
 
 app.get('/', (req, res) => {
   const month = normalizeMonth(req.query.month);
@@ -369,10 +368,14 @@ app.post('/transactions', (req, res) => {
     return res.status(400).send(renderPage({ month, error: 'Inserisci un importo maggiore di zero.', form }));
   }
 
-  db.prepare(`
-    INSERT INTO transactions (date, description, amount, type, category, subcategory)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(form.date, form.description, amount, form.type, form.category, form.subcategory || null);
+  addTransaction({
+    date: form.date,
+    description: form.description,
+    amount,
+    type: form.type,
+    category: form.category,
+    subcategory: form.subcategory || null,
+  });
 
   return res.redirect(`/?month=${encodeURIComponent(month)}`);
 });
@@ -382,7 +385,7 @@ app.post('/transactions/:id/delete', (req, res) => {
   const id = Number(req.params.id);
 
   if (Number.isInteger(id) && id > 0) {
-    db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
+    deleteTransaction(id);
   }
 
   res.redirect(`/?month=${encodeURIComponent(month)}`);

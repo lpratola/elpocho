@@ -1,7 +1,7 @@
-const { getDb } = require('../src/db');
 const categories = require('../src/categories');
+const { ensureStore, seedTransactions, dataPath } = require('../src/store');
 
-const seedTransactions = [
+const seedRows = [
   {
     date: '2026-07-01',
     description: 'Stipendio Luca',
@@ -44,37 +44,9 @@ const seedTransactions = [
   },
 ];
 
-const db = getDb();
+ensureStore();
+seedTransactions(seedRows);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL,
-    description TEXT NOT NULL,
-    amount REAL NOT NULL CHECK(amount > 0),
-    type TEXT NOT NULL CHECK(type IN ('entrata', 'uscita')),
-    category TEXT NOT NULL,
-    subcategory TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-const count = db.prepare('SELECT COUNT(*) as count FROM transactions').get();
-
-if (count.count === 0) {
-  const insert = db.prepare(`
-    INSERT INTO transactions (date, description, amount, type, category, subcategory)
-    VALUES (@date, @description, @amount, @type, @category, @subcategory)
-  `);
-
-  const insertMany = db.transaction((items) => {
-    for (const item of items) {
-      insert.run(item);
-    }
-  });
-
-  insertMany(seedTransactions);
-}
-
-console.log('Database inizializzato con successo.');
+console.log('Archivio JSON inizializzato con successo.');
+console.log(`File dati: ${dataPath}`);
 console.log('Categorie disponibili:', JSON.stringify(categories, null, 2));
