@@ -169,6 +169,10 @@ function renderPage({ month, error = '', form = {} }) {
         .join('')
     : '<tr><td colspan="7">Nessun movimento registrato per il mese selezionato.</td></tr>';
 
+  const clientCategoriesJson = JSON.stringify(categories);
+  const initialTypeJson = JSON.stringify(form.type || 'uscita');
+  const initialCategoryJson = JSON.stringify(form.category || '');
+
   return `<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -291,17 +295,17 @@ function renderPage({ month, error = '', form = {} }) {
   </main>
 
   <script>
-    const categories = ${JSON.stringify(categories)};
-    const initialType = ${JSON.stringify(form.type || 'uscita')};
-    const initialCategory = ${JSON.stringify(form.category || '')};
+    const categories = ${clientCategoriesJson};
+    const initialType = ${initialTypeJson};
+    const initialCategory = ${initialCategoryJson};
     const categorySelect = document.getElementById('category');
     const typeSelect = document.getElementById('type');
     const subcategoryList = document.getElementById('subcategory-list');
 
     function renderCategoryOptions(type, selectedCategory) {
-      const options = (categories[type] || []).map((item) => {
+      const options = (categories[type] || []).map(function (item) {
         const isSelected = item.name === selectedCategory ? 'selected' : '';
-        return `<option value="${item.name}" ${isSelected}>${item.name}</option>`;
+        return '<option value="' + item.name + '" ' + isSelected + '>' + item.name + '</option>';
       }).join('');
 
       categorySelect.innerHTML = options;
@@ -310,12 +314,20 @@ function renderPage({ month, error = '', form = {} }) {
     }
 
     function renderSubcategoryOptions(type, categoryName) {
-      const group = (categories[type] || []).find((item) => item.name === categoryName);
-      subcategoryList.innerHTML = (group?.subcategories || []).map((item) => `<option value="${item}"></option>`).join('');
+      const group = (categories[type] || []).find(function (item) {
+        return item.name === categoryName;
+      });
+      subcategoryList.innerHTML = ((group && group.subcategories) || []).map(function (item) {
+        return '<option value="' + item + '"></option>';
+      }).join('');
     }
 
-    typeSelect.addEventListener('change', () => renderCategoryOptions(typeSelect.value, ''));
-    categorySelect.addEventListener('change', () => renderSubcategoryOptions(typeSelect.value, categorySelect.value));
+    typeSelect.addEventListener('change', function () {
+      renderCategoryOptions(typeSelect.value, '');
+    });
+    categorySelect.addEventListener('change', function () {
+      renderSubcategoryOptions(typeSelect.value, categorySelect.value);
+    });
 
     renderCategoryOptions(initialType, initialCategory);
   </script>
